@@ -96,6 +96,9 @@ steps:
         - clawith-backend-private.tar
         - clawith-frontend-private.tar
       rm: false
+    when:
+      event:
+        - push
 
   # --------------------------------------------------------
   # Step 4: 部署到私有服务器环境
@@ -111,28 +114,149 @@ steps:
       password:
         from_secret: sshpwd
       script:
-        - echo "========================================"
-        - echo "🔄 开始部署到私有服务器环境"
-        - echo "========================================"
-        - DEPLOY_DIR=/opt/server/clawith-private
-        # 进入部署目录
-        - cd $DEPLOY_DIR || exit 1
-        # 加载镜像
-        - echo "📦 加载 Docker 镜像"
-        - docker load -i clawith-backend-private.tar
-        - docker load -i clawith-frontend-private.tar
-        # 清理传输的镜像文件
-        - rm -f clawith-backend-private.tar clawith-frontend-private.tar
-        # 重启服务 (假设目标服务器的 docker-compose.yml 已经配置好引用相关的镜像，或默认使用构建的 image 名称)
-        - echo "🚀 启动服务"
-        - docker compose up -d --force-recreate --no-deps backend frontend
-        # 等待后端服务启动并从日志中验证是否成功
-        - echo "⏳ 正在等待后端服务启动并验证日志..."
-        - timeout 60s bash -c 'until docker compose logs --tail=100 backend | grep -q "Application startup complete"; do sleep 3; done' || (echo "❌ 后端启动失败或超时，打印最近日志：" && docker compose logs --tail=50 backend && exit 1)
-        - docker compose ps
-        # 清理旧镜像
-        - docker image prune -af --filter "until=168h"
-        - echo "✅ 部署完成"
+        - |
+          set -eu
+          echo "========================================"
+          echo "🔄 开始部署到私有服务器环境"
+          echo "========================================"
+
+          if docker compose version >/dev/null 2>&1; then
+            compose() { docker compose -p clawith-private -f docker-compose.drone.yml "$@"; }
+          elif command -v docker-compose >/dev/null 2>&1; then
+            compose() { docker-compose -p clawith-private -f docker-compose.drone.yml "$@"; }
+          else
+            echo "❌ 未找到 docker compose / docker-compose"
+            exit 1
+          fi
+
+          DEPLOY_DIR=/opt/server/clawith-private
+          mkdir -p "$DEPLOY_DIR"
+          cd "$DEPLOY_DIR"
+
+          if [ ! -f .env ]; then
+            cat > .env <<'EOF'
+          SECRET_KEY=change-me-in-production
+          JWT_SECRET_KEY=change-me-jwt-secret
+          PUBLIC_BASE_URL=
+          PASSWORD_RESET_TOKEN_EXPIRE_MINUTES=30
+          FEISHU_APP_ID=
+          FEISHU_APP_SECRET=
+          FEISHU_REDIRECT_URI=
+          JINA_API_KEY=
+          EXA_API_KEY=
+          EOF
+          fi
+
+          echo "📦 加载 Docker 镜像"
+          docker load -i clawith-backend-private.tar
+          docker load -i clawith-frontend-private.tar
+          rm -f clawith-backend-private.tar clawith-frontend-private.tar
+
+          cat > docker-compose.drone.yml <<'EOF'
+          services:
+            postgres:
+              image: postgres:15-alpine
+              restart: unless-stopped
+              environment:
+                POSTGRES_USER: clawith
+                POSTGRES_PASSWORD: clawith
+                POSTGRES_DB: clawith
+              volumes:
+                - pgdata:/var/lib/postgresql/data
+              healthcheck:
+                test: ["CMD-SHELL", "pg_isready -U clawith -d clawith"]
+                interval: 5s
+                timeout: 5s
+                retries: 10
+
+            redis:
+              image: redis:7-alpine
+              restart: unless-stopped
+              volumes:
+                - redisdata:/data
+              healthcheck:
+                test: ["CMD", "redis-cli", "ping"]
+                interval: 5s
+                timeout: 5s
+                retries: 10
+
+            backend:
+              image: clawith-backend:private
+              restart: unless-stopped
+              command: ["/bin/bash", "/app/entrypoint.sh"]
+              env_file:
+                - .env
+              environment:
+                DATABASE_URL: postgresql+asyncpg://clawith:clawith@postgres:5432/clawith
+                REDIS_URL: redis://redis:6379/0
+                AGENT_DATA_DIR: /data/agents
+                AGENT_TEMPLATE_DIR: /app/agent_template
+                SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
+                JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-jwt-secret}
+                CORS_ORIGINS: '["*"]'
+                FEISHU_APP_ID: ${FEISHU_APP_ID:-}
+                FEISHU_APP_SECRET: ${FEISHU_APP_SECRET:-}
+                FEISHU_REDIRECT_URI: ${FEISHU_REDIRECT_URI:-}
+                JINA_API_KEY: ${JINA_API_KEY:-}
+                EXA_API_KEY: ${EXA_API_KEY:-}
+                DOCKER_NETWORK: clawith_yaojin_network
+                SS_CONFIG_FILE: /data/ss-nodes.json
+                PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+                PASSWORD_RESET_TOKEN_EXPIRE_MINUTES: ${PASSWORD_RESET_TOKEN_EXPIRE_MINUTES:-30}
+              ports:
+                - "8008:8000"
+              volumes:
+                - agentdata:/data/agents
+                - /var/run/docker.sock:/var/run/docker.sock
+              depends_on:
+                postgres:
+                  condition: service_healthy
+                redis:
+                  condition: service_healthy
+              healthcheck:
+                test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/health || exit 1"]
+                interval: 15s
+                timeout: 5s
+                retries: 10
+                start_period: 30s
+
+            frontend:
+              image: clawith-frontend:private
+              restart: unless-stopped
+              ports:
+                - "3008:3000"
+              depends_on:
+                backend:
+                  condition: service_healthy
+
+          volumes:
+            pgdata:
+            redisdata:
+            agentdata:
+          EOF
+
+          echo "🚀 启动服务"
+          compose config -q
+          compose up -d --force-recreate --remove-orphans postgres redis backend frontend
+
+          echo "⏳ 等待后端健康检查通过..."
+          i=0
+          until curl -fsS http://127.0.0.1:8008/api/health >/dev/null 2>&1; do
+            i=$((i+1))
+            if [ "$i" -ge 40 ]; then
+              echo "❌ 后端启动失败或超时，打印最近日志："
+              compose logs --tail=80 backend postgres redis frontend
+              exit 1
+            fi
+            sleep 3
+          done
+
+          compose ps
+          docker image prune -af --filter "until=168h"
+          echo "✅ 部署完成"
+    when:
+      event:
+        - push
 
 trigger:
   branch:
