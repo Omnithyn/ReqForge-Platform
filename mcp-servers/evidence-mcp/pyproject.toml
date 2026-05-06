@@ -1,0 +1,11 @@
+[project]
+name = "reqforge-evidence-mcp"
+version = "0.1.0"
+description = "ReqForge Evidence MCP Server — migrated from SaucyClaw core/evidence/"
+requires-python = ">=3.12"
+dependencies = [
+    "mcp>=1.0",
+]
+
+[project.scripts]
+evidence-mcp = "server:main"

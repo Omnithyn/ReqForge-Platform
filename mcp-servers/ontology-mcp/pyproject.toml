@@ -1,0 +1,12 @@
+[project]
+name = "reqforge-ontology-mcp"
+version = "0.1.0"
+description = "ReqForge Ontology MCP Server — migrated from SaucyClaw ontology/"
+requires-python = ">=3.12"
+dependencies = [
+    "mcp>=1.0",
+    "pyyaml>=6.0",
+]
+
+[project.scripts]
+ontology-mcp = "server:main"
