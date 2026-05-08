@@ -1,0 +1,27 @@
+# ReqForge Docker Compose 扩展
+# 在 Clawith 基础上添加 Apache AGE (图数据库)
+# 使用方法: docker compose -f docker-compose.yml -f docker-compose.reqforge.yml up -d
+
+services:
+  age:
+    image: apache/age:latest
+    container_name: reqforge-age
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: clawith
+      POSTGRES_PASSWORD: clawith
+      POSTGRES_DB: reqforge_ontology
+    volumes:
+      - age_data:/var/lib/postgresql/data
+      - ./docs/design/age-graph-setup.sql:/docker-entrypoint-initdb.d/01-age-setup.sql
+    networks:
+      - clawith_network
+    restart: unless-stopped
+
+volumes:
+  age_data:
+
+networks:
+  clawith_network:
+    external: true
