@@ -1,58 +1,44 @@
 'use client';
 
-import { Card, Typography, Empty, Space, Tag, Button, Row, Col } from 'antd';
-import { PlusOutlined, ApartmentOutlined } from '@ant-design/icons';
+import { Card, Typography, Space, Tag, Button, Row, Col, Table, message } from 'antd';
+import { PlusOutlined } from '@ant-design/icons';
+import { useState, useEffect } from 'react';
+import { listOntologyTypes, createOntologyType } from '@/lib/api';
 
 const { Title, Text } = Typography;
 
 export default function OntologyPage() {
+  const [types, setTypes] = useState<Array<Record<string,unknown>>>([]);
+  const [loading, setLoading] = useState(true);
+  const load = async () => { try { setTypes(await listOntologyTypes()); } catch {}; setLoading(false); };
+  useEffect(() => { load(); }, []);
+
+  const add = async () => {
+    try { await createOntologyType({ name: `业务对象_${Date.now()}`, category: 'entity', scope: 'global' }); message.success('已创建'); load(); }
+    catch { message.error('创建失败，请先登录'); }
+  };
+
   return (
     <div style={{ padding: 24 }}>
-      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <Title level={3} style={{ margin: 0 }}>本体建模</Title>
-          <Text type="secondary">管理业务对象、属性、关系和规则</Text>
-        </div>
-        <Button type="primary" icon={<PlusOutlined />}>新建本体对象</Button>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
+        <div><Title level={3} style={{ margin:0 }}>本体建模</Title><Text type="secondary">业务对象、属性、关系管理</Text></div>
+        <Button type="primary" icon={<PlusOutlined />} onClick={add}>新建对象</Button>
       </div>
-
       <Row gutter={16}>
         <Col span={16}>
-          <Card title="本体关系图" style={{ minHeight: 500 }}>
-            <Empty
-              image={<ApartmentOutlined style={{ fontSize: 64, color: '#d9d9d9' }} />}
-              description="暂无本体数据。从需求工作台上传文档并完成需求分析后，本体关系图将在此展示。"
-            />
+          <Card title={`本体类型 (${types.length})`}>
+            <Table dataSource={types as Array<Record<string,unknown>>} columns={[
+              { title:'名称', dataIndex:'name', key:'name' },
+              { title:'类别', dataIndex:'category', key:'cat', render:(v:string)=><Tag color="blue">{v||'entity'}</Tag> },
+              { title:'范围', dataIndex:'scope', key:'scope', render:(v:string)=><Tag color={v==='global'?'green':'orange'}>{v||'global'}</Tag> },
+              { title:'创建', dataIndex:'created_at', key:'dt', render:(v:string)=>v?.split('T')[0]||'-' },
+            ]} rowKey="id" size="small" loading={loading} pagination={false} />
           </Card>
         </Col>
         <Col span={8}>
-          <Card title="对象类型" size="small" style={{ marginBottom: 16 }}>
-            <Space wrap>
-              <Tag color="blue">业务主体</Tag>
-              <Tag color="green">业务对象</Tag>
-              <Tag color="orange">业务流程</Tag>
-              <Tag color="purple">数据字段</Tag>
-              <Tag color="red">接口服务</Tag>
-            </Space>
-          </Card>
-          <Card title="关系类型" size="small" style={{ marginBottom: 16 }}>
-            <Space direction="vertical">
-              <Text>→ 需求来源于文档</Text>
-              <Text>→ 规则约束字段</Text>
-              <Text>→ 页面展示字段</Text>
-              <Text>→ 接口使用字段</Text>
-              <Text>→ 测试覆盖规则</Text>
-            </Space>
-          </Card>
-          <Card title="MCP 后端" size="small">
-            <Text type="secondary">ontology-mcp 提供本体建模能力</Text>
-            <br />
-            <Text type="secondary">Apache AGE 提供图查询能力</Text>
-          </Card>
+          <Card title="关系类型" size="small"><Space direction="vertical"><Text>INHERITS 继承</Text><Text>EXTENDS 扩展</Text><Text>OVERRIDES 覆盖</Text><Text>INSTANCE_OF 实例化</Text></Space></Card>
         </Col>
       </Row>
     </div>
   );
 }
-
-
