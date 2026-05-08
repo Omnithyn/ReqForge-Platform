@@ -1,8 +1,8 @@
 """ReqForge REST API routes — enterprise requirement engineering."""
 from fastapi import APIRouter, Depends
-from app.core.auth import get_current_user
+from app.core.security import get_current_user
 
-router = APIRouter(prefix="/v1/reqforge", tags=["reqforge"])
+router = APIRouter(prefix="/api/v1/reqforge", tags=["reqforge"])
 
 @router.get("/status")
 async def reqforge_status():
