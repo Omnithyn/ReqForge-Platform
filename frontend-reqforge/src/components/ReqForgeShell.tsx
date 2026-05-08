@@ -30,6 +30,8 @@ const navItems = [
 export function ReqForgeShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  const [loggedIn, setLoggedIn] = React.useState(false);
+  React.useEffect(() => { setLoggedIn(!!localStorage.getItem('reqforge_token')); }, []);
 
   return (
     <div className="reqforge-layout">
