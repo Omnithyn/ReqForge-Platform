@@ -13,7 +13,7 @@ async function fetchAPI(path: string, options?: RequestInit) {
   return res.json();
 }
 
-export async function login(username: string, password: string) { const d = await fetchAPI('/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) }); setToken(d.access_token); return d; }
+export async function login(identifier: string, password: string) { const d = await fetchAPI('/auth/login', { method: 'POST', body: JSON.stringify({"login_identifier":identifier,"password":password}) }); setToken(d.access_token); return d; }
 export async function reqforgeStatus() { return fetchAPI('/v1/reqforge/status'); }
 export async function listProjects() { return fetchAPI('/v1/reqforge/projects'); }
 export async function createProject(name: string, domain?: string) { return fetchAPI('/v1/reqforge/projects', { method: 'POST', body: JSON.stringify({ name, business_domain: domain }) }); }
