@@ -7,15 +7,8 @@ from pydantic import BaseModel
 
 from app.database import get_db
 from app.core.security import get_current_user
-from app.database import get_db as get_db_session
 from app.models.user import User as UserModel
 from app.models.reqforge import ReqForgeProject
-
-async def _get_tenant(user, db):
-    if user.tenant_id: return user.tenant_id
-    from sqlalchemy import text
-    r = await db.execute(text("SELECT id FROM tenants LIMIT 1"))
-    return r.scalar()
 
 router = APIRouter(prefix="/projects", tags=["reqforge-projects"])
 
@@ -26,44 +19,23 @@ class ProjectCreate(BaseModel):
     tech_stack: str | None = None
 
 class ProjectResponse(BaseModel):
-    id: str
-    name: str
-    business_domain: str | None
-    created_at: str | None
+    id: str; name: str; business_domain: str | None; created_at: str | None
     class Config: from_attributes = True
 
 @router.get("", response_model=list[ProjectResponse])
-async def list_projects(
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    result = await db.execute(
-        select(ReqForgeProject).where(ReqForgeProject.tenant_id == user.tenant_id)
-    )
+async def list_projects(user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(ReqForgeProject).where(ReqForgeProject.tenant_id == user.tenant_id))
     projects = result.scalars().all()
     return [{"id": str(p.id), "name": p.name, "business_domain": p.business_domain, "created_at": str(p.created_at) if p.created_at else None} for p in projects]
 
 @router.post("", response_model=ProjectResponse)
-async def create_project(
-    data: ProjectCreate,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    project = ReqForgeProject(
-        id=uuid.uuid4(), tenant_id=user.tenant_id, name=data.name,
-        description=data.description, business_domain=data.business_domain,
-        tech_stack=data.tech_stack, created_by=user.id,
-    )
-    db.add(project)
-    await db.commit()
+async def create_project(data: ProjectCreate, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    project = ReqForgeProject(id=uuid.uuid4(), tenant_id=user.tenant_id, name=data.name, description=data.description, business_domain=data.business_domain, tech_stack=data.tech_stack, created_by=user.id)
+    db.add(project); await db.commit()
     return {"id": str(project.id), "name": project.name, "business_domain": project.business_domain, "created_at": str(project.created_at) if project.created_at else None}
 
 @router.delete("/{project_id}")
-async def delete_project(
-    project_id: str,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
+async def delete_project(project_id: str, user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     await db.execute(delete(ReqForgeProject).where(ReqForgeProject.id == project_id, ReqForgeProject.tenant_id == user.tenant_id))
     await db.commit()
     return {"status": "deleted"}
